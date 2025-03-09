@@ -1,0 +1,168 @@
+/* Legal Assistant custom styles */
+
+/* Main app styling */
+.main .block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+}
+
+/* Header styling */
+h1, h2, h3, h4, h5, h6 {
+    color: #1E3A8A;
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+/* Custom coloring for success messages */
+.stSuccess {
+    background-color: #E8F5E9;
+    color: #2E7D32;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    border-left: 5px solid #2E7D32;
+}
+
+/* Custom coloring for error messages */
+.stError {
+    background-color: #FFEBEE;
+    color: #C62828;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    border-left: 5px solid #C62828;
+}
+
+/* Custom coloring for warning messages */
+.stWarning {
+    background-color: #FFF8E1;
+    color: #F57F17;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    border-left: 5px solid #F57F17;
+}
+
+/* Custom coloring for info messages */
+.stInfo {
+    background-color: #E3F2FD;
+    border-left: 5px solid #2196F3;
+}
+
+.assistant-message {
+    background-color: #F5F5F5;
+    border-left: 5px solid #9E9E9E;
+}
+
+/* Footer styling */
+footer {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid #ECEFF1;
+    text-align: center;
+    color: #78909C;
+    font-size: 0.8rem;
+}
+
+/* Sidebar styling */
+.css-1d391kg {
+    background-color: #F8F9FA;
+}
+
+/* Sidebar title */
+.css-1d391kg h1 {
+    color: #1E3A8A;
+    font-size: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+/* Sidebar info box */
+.css-1d391kg .stAlert {
+    border-radius: 0.5rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .main .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+    }
+    
+    h1 {
+        font-size: 1.8rem;
+    }
+    
+    h2 {
+        font-size: 1.5rem;
+    }
+    
+    h3 {
+        font-size: 1.2rem;
+    }
+}
+color: #1565C0;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    border-left: 5px solid #1565C0;
+}
+
+/* File uploader styling */
+.stFileUploader {
+    padding: 1rem;
+    background-color: #F5F7FA;
+    border-radius: 0.5rem;
+    border: 1px dashed #CFD8DC;
+}
+
+/* Button styling */
+.stButton > button {
+    border-radius: 0.5rem;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Tabs styling */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 1rem;
+}
+
+.stTabs [data-baseweb="tab"] {
+    border-radius: 0.5rem 0.5rem 0 0;
+    padding: 1rem 1.5rem;
+}
+
+/* Expander styling */
+.streamlit-expanderHeader {
+    font-weight: 600;
+    color: #1E3A8A;
+}
+
+/* Text area styling */
+.stTextArea textarea {
+    border-radius: 0.5rem;
+    border: 1px solid #CFD8DC;
+}
+
+/* Radio button styling */
+.stRadio [data-testid="stRadio"] > div {
+    gap: 1rem;
+}
+
+/* Slider styling */
+.stSlider [data-testid="stThumbValue"] {
+    color: #1E3A8A;
+    font-weight: 600;
+}
+
+/* Chat message styling */
+.chat-message {
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+    position: relative;
+}
+
+.user-message {
+    background-color: #E3F2FD;
