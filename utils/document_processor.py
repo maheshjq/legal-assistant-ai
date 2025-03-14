@@ -75,7 +75,7 @@ def get_extractor_for_file_type(file_type: str) -> Optional[Callable]:
         Callable: A function that extracts text from the given file type
     """
     extractors = {
-        'pdf': extract_text_from_pdf_with_layout,
+        'pdf': extract_text_from_pdf_advanced,  # Use the improved version
         'docx': extract_text_from_docx,
         'doc': extract_text_from_docx,  # Note: may not work well with .doc format
         'txt': extract_text_from_txt,
@@ -171,6 +171,70 @@ def extract_structured_text(text: str) -> Dict:
     
     return structure
 
+def preprocess_legal_document(text: str) -> str:
+    """
+    Preprocess legal document text to improve analysis quality
+    
+    Args:
+        text: Raw text extracted from a document
+        
+    Returns:
+        str: Preprocessed text
+    """
+    # Remove excessive whitespace
+    text = re.sub(r'\s+', ' ', text)
+    
+    # Remove page numbers (common pattern in legal docs)
+    text = re.sub(r'\s+\d+\s+', ' ', text)
+    
+    # Remove common header/footer patterns
+    text = re.sub(r'Page \d+ of \d+', '', text)
+    
+    # Add proper spacing after full stops
+    text = re.sub(r'\.(?=[A-Z])', '. ', text)
+    
+    # Try to identify section breaks
+    text = re.sub(r'([A-Z][A-Z\s]+:)', r'\n\n\1', text)
+    
+    return text
+
+# utils/document_processor.py - add this function for better PDF handling
+
+def extract_text_from_pdf_advanced(file_obj: BinaryIO) -> str:
+    """
+    Enhanced text extraction from PDF with better formatting
+    
+    Args:
+        file_obj: A file-like object containing the PDF
+        
+    Returns:
+        str: Extracted text with improved formatting
+    """
+    # Try using pdfplumber first for better text extraction
+    try:
+        with pdfplumber.open(file_obj) as pdf:
+            text_parts = []
+            
+            for page in pdf.pages:
+                # Extract text from the page
+                page_text = page.extract_text() or ""
+                
+                # Add page text to the collection
+                if page_text.strip():
+                    text_parts.append(page_text)
+            
+            # Join all text with double newlines to separate pages
+            return "\n\n".join(text_parts)
+            
+    except Exception as e:
+        print(f"Error with pdfplumber: {e}")
+        # Fall back to PyPDF2
+        try:
+            file_obj.seek(0)  # Reset file pointer
+            return extract_text_from_pdf(file_obj)
+        except Exception as e2:
+            print(f"Error with PyPDF2 fallback: {e2}")
+            raise
 # Partial function applications for common use cases
 extract_pdf_text = extract_text_from_pdf
 extract_pdf_text_with_layout = extract_text_from_pdf_with_layout

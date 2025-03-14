@@ -159,62 +159,168 @@ def summarize_document(text: str, model_name: str = "llama2") -> str:
     else:
         return summarize_chain.run(text=text)
 
-def analyze_contract(text: str, model_name: str = "llama2") -> Dict[str, Any]:
+# utils/llm_processor.py - update the analyze_contract function
+
+import json
+import re
+
+def analyze_contract(text: str, model_name: str = "llama2", **kwargs) -> Dict[str, Any]:
     """
     Analyze a contract document
     
     Args:
         text: Contract text to analyze
         model_name: Name of the Ollama model to use
+        **kwargs: Additional parameters for analysis customization
         
     Returns:
         Dict: Analysis results including parties, key terms, obligations, etc.
     """
     llm = create_ollama_llm(model_name)
     
-    # Create a contract analysis chain with strict JSON output instructions
-    prompt_template = """
-    You are a legal contract analyst. Analyze the following contract and extract key information.
+    # Determine document type from kwargs or try to infer it
+    document_type = kwargs.get('document_type', 'Automatic Detection')
+    focus_areas = kwargs.get('focus_areas', ['Parties', 'Key Terms', 'Obligations', 'Provisions'])
     
-    Contract:
-    {text}
-    
-    Provide ONLY a JSON object with the following structure, and nothing else before or after it:
-    {{
-        "parties": ["Party 1", "Party 2", ...],
-        "contract_type": "Type of contract",
-        "key_dates": ["Date 1: description", "Date 2: description", ...],
-        "key_terms": ["Term 1", "Term 2", ...],
-        "obligations": ["Obligation 1", "Obligation 2", ...],
-        "termination_conditions": ["Condition 1", "Condition 2", ...],
-        "risks": ["Risk 1", "Risk 2", ...],
-        "recommendations": ["Recommendation 1", "Recommendation 2", ...]
-    }}
-    
-    Remember: Your entire response must only be the JSON object with no additional text before or after.
-    """
+    # Create a more targeted prompt based on document type
+    if document_type == "Treaty/International Agreement":
+        prompt_template = """
+        You are a legal analyst specializing in international agreements and treaties. Analyze the following document and extract key information.
+        
+        Document:
+        {text}
+        
+        Extract all relevant information about this international agreement or treaty.
+        
+        Provide a JSON object with the following structure:
+        {{
+            "document_type": "Type of document (e.g., Trade Agreement, Treaty, Convention, Memorandum of Understanding)",
+            "title": "Full title of the document",
+            "parties": ["Country/Entity 1", "Country/Entity 2", ...],
+            "effective_date": "When the agreement came into force",
+            "key_sections": ["Section 1: description", "Section 2: description", ...],
+            "key_provisions": ["Provision 1", "Provision 2", ...],
+            "obligations": ["Obligation 1", "Obligation 2", ...],
+            "termination_conditions": ["Condition 1", "Condition 2", ...],
+            "benefits": ["Benefit 1", "Benefit 2", ...],
+            "restrictions": ["Restriction 1", "Restriction 2", ...]
+        }}
+        
+        Extract REAL information from the document. DO NOT use placeholder text like "Date 1: description". 
+        If you cannot find specific information, leave that field as an empty array or null.
+        """
+    elif document_type == "Legal Handbook/Guide":
+        prompt_template = """
+        You are a legal analyst specializing in legal handbooks and guides. Analyze the following document and extract key information.
+        
+        Document:
+        {text}
+        
+        Extract all relevant information about this legal handbook or guide.
+        
+        Provide a JSON object with the following structure:
+        {{
+            "document_type": "Type of document (e.g., Handbook, Guide, Manual)",
+            "title": "Full title of the document",
+            "parties": ["Organization/Author", "Target Audience", ...],
+            "publication_date": "When the document was published",
+            "key_sections": ["Section 1: description", "Section 2: description", ...],
+            "key_topics": ["Topic 1", "Topic 2", ...],
+            "key_provisions": ["Provision 1", "Provision 2", ...],
+            "important_definitions": ["Definition 1", "Definition 2", ...],
+            "notable_points": ["Point 1", "Point 2", ...]
+        }}
+        
+        Extract REAL information from the document. DO NOT use placeholder text like "Topic 1". 
+        If you cannot find specific information, leave that field as an empty array or null.
+        """
+    else:  # Default for contracts or automatic detection
+        prompt_template = """
+        You are a legal document analyst. Analyze the following document and extract key information.
+        
+        Document:
+        {text}
+        
+        First, determine what type of legal document this is (contract, agreement, treaty, handbook, etc.).
+        Then extract all relevant information based on the document type.
+        
+        Provide a JSON object with the following structure:
+        {{
+            "document_type": "Type of document (e.g., Contract, Agreement, Treaty, Handbook)",
+            "title": "Full title of the document",
+            "parties": ["Party 1", "Party 2", ...],
+            "effective_date": "When the document came into force (if applicable)",
+            "key_sections": ["Section 1: description", "Section 2: description", ...],
+            "key_terms": ["Term 1", "Term 2", ...],
+            "key_provisions": ["Provision 1", "Provision 2", ...],
+            "obligations": ["Obligation 1", "Obligation 2", ...],
+            "termination_conditions": ["Condition 1", "Condition 2", ...],
+            "benefits": ["Benefit 1", "Benefit 2", ...],
+            "restrictions": ["Restriction 1", "Restriction 2", ...]
+        }}
+        
+        Extract REAL information from the document. DO NOT use placeholder text like "Party 1". 
+        If you cannot find specific information, leave that field as an empty array or null.
+        """
     
     prompt = PromptTemplate.from_template(prompt_template)
     analysis_chain = LLMChain(llm=llm, prompt=prompt)
     
-    # Run the analysis
-    result = analysis_chain.run(text=text)
+    # For long documents, split into chunks and analyze separately
+    if len(text) > 6000:
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=6000, chunk_overlap=500)
+        chunks = text_splitter.split_text(text)
+        
+        # Get first chunk for basic document info and last chunk for conclusions
+        first_chunk = chunks[0]
+        last_chunk = chunks[-1]
+        
+        # Get a middle chunk to ensure comprehensive coverage
+        middle_chunk = chunks[len(chunks)//2] if len(chunks) > 2 else ""
+        
+        # Combine key chunks with document summary
+        summary = f"""
+        FIRST PART:
+        {first_chunk}
+        
+        MIDDLE PART:
+        {middle_chunk}
+        
+        LAST PART:
+        {last_chunk}
+        
+        This is a partial extraction from a longer document. Focus on identifying the document type,
+        parties involved, key provisions, and overall purpose.
+        """
+        
+        result = analysis_chain.run(text=summary)
+    else:
+        result = analysis_chain.run(text=text)
     
-    # Try to parse JSON from the result - with more robust parsing
+    # Parse the JSON response
     try:
         # Find JSON content in the response (if there's any text before/after JSON)
-        json_start = result.find('{')
-        json_end = result.rfind('}') + 1
+        json_pattern = r'(?s)\{.*\}'
+        json_match = re.search(json_pattern, result)
         
-        if json_start >= 0 and json_end > json_start:
-            json_text = result[json_start:json_end]
-            structured_data = json.loads(json_text)
-            return {"analysis": json_text, "structured_data": structured_data}
+        if json_match:
+            json_text = json_match.group(0)
+            try:
+                structured_data = json.loads(json_text)
+                return {"analysis": result, "structured_data": structured_data}
+            except json.JSONDecodeError:
+                # Try to clean the JSON string by removing any markdown code block markers
+                cleaned_json = json_text.replace("```json", "").replace("```", "").strip()
+                structured_data = json.loads(cleaned_json)
+                return {"analysis": result, "structured_data": structured_data}
+        else:
+            # If no JSON pattern found, return just the text
+            return {"analysis": result}
+            
     except Exception as e:
         print(f"JSON parsing error: {e}")
-    
-    # If we couldn't parse JSON, return just the text
-    return {"analysis": result}
+        # If we couldn't parse JSON, return just the text
+        return {"analysis": result}
 
 def answer_question(question: str, context: str, model_name: str = "llama2") -> str:
     """

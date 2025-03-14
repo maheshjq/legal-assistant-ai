@@ -25,9 +25,9 @@ except:
 st.title("🧾 AI-Enhanced Legal Assistant")
 st.markdown("""
     This application provides AI-powered tools for legal professionals, including:
-    - Document summarization
-    - Contract review and analysis
-    - Voice-commanded question answering
+    - Document summarization for legal documents, treaties, and agreements
+    - Document analysis for contracts, agreements, and international treaties
+    - Voice-commanded question answering for legal research
     
     All processing is done locally on your machine for data privacy.
 """)
@@ -40,7 +40,7 @@ if "active_tab" not in st.session_state:
 st.sidebar.title("Navigation")
 selected_tab = st.sidebar.radio(
     "Choose a tool:",
-    ["Document Summarization", "Contract Analysis", "Voice Q&A"],
+    ["Document Summarization", "Document Analysis", "Voice Q&A"],
     key="sidebar_selection"
 )
 
@@ -61,8 +61,8 @@ st.sidebar.info("""
 # Main content based on selected tab
 if st.session_state.active_tab == "Document Summarization":
     document_summarization_ui()
-elif st.session_state.active_tab == "Contract Analysis":
-    contract_analysis_ui()
+elif st.session_state.active_tab == "Document Analysis":  # Changed from "Contract Analysis"
+    contract_analysis_ui()  # Function name can stay the same
 elif st.session_state.active_tab == "Voice Q&A":
     voice_qa_ui()
 
