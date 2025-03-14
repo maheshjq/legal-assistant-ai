@@ -9,6 +9,10 @@ import docx
 from typing import Dict, List, Union, Callable, Optional, BinaryIO
 import io
 from functools import partial
+import hashlib
+from functools import lru_cache
+import re
+import streamlit as st
 
 def extract_text_from_pdf(file_obj: BinaryIO) -> str:
     """
@@ -235,6 +239,56 @@ def extract_text_from_pdf_advanced(file_obj: BinaryIO) -> str:
         except Exception as e2:
             print(f"Error with PyPDF2 fallback: {e2}")
             raise
+# Cache extracted text to avoid repeated processing
+@lru_cache(maxsize=16)
+def _cached_extract_text(file_hash: str, file_type: str) -> str:
+    """Cached version of text extraction - internal use only"""
+    # This is a placeholder that will be called by extract_text_from_file
+    # The actual implementation is in the file_obj version
+    return ""
+
+def extract_text_from_file(file_obj: BinaryIO, file_type: str) -> str:
+    """
+    Extract text from a file based on its type with caching
+    
+    Args:
+        file_obj: A file-like object
+        file_type: The file extension or MIME type
+        
+    Returns:
+        str: Extracted text from the file
+        
+    Raises:
+        ValueError: If the file type is not supported
+    """
+    # Calculate a hash of the file content for caching
+    original_position = file_obj.tell()
+    file_obj.seek(0)
+    file_content = file_obj.read()
+    file_hash = hashlib.md5(file_content).hexdigest()
+    file_obj.seek(original_position)  # Reset file position
+    
+    # Check if we have this in the cache
+    cache_key = f"{file_hash}_{file_type}"
+    if hasattr(st, 'session_state') and 'doc_cache' in st.session_state and cache_key in st.session_state.doc_cache:
+        return st.session_state.doc_cache[cache_key]
+    
+    # If not in cache, extract the text
+    extractor = get_extractor_for_file_type(file_type)
+    
+    if extractor is None:
+        raise ValueError(f"Unsupported file type: {file_type}")
+    
+    # Extract the text
+    text = extractor(file_obj)
+    
+    # Cache the result
+    if hasattr(st, 'session_state'):
+        if 'doc_cache' not in st.session_state:
+            st.session_state.doc_cache = {}
+        st.session_state.doc_cache[cache_key] = text
+    
+    return text
 # Partial function applications for common use cases
 extract_pdf_text = extract_text_from_pdf
 extract_pdf_text_with_layout = extract_text_from_pdf_with_layout

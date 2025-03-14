@@ -3,19 +3,40 @@ LLM processing utilities for Ollama and LangChain integration.
 """
 
 import requests
-from langchain.llms import Ollama
+# from langchain.llms import Ollama
+# from langchain.chains import ConversationChain, AnalyzeDocumentChain, LLMChain
+# from langchain.chains.summarize import load_summarize_chain
+# from langchain.chains.question_answering import load_qa_chain
+# from langchain.prompts import PromptTemplate
+# from langchain.text_splitter import RecursiveCharacterTextSplitter
+# from langchain.memory import ConversationBufferMemory
+# from langchain_community.document_loaders import TextLoader
+# from langchain_community.document_loaders.base import Document
+# from langchain.schema import Document
+# from langchain_community.embeddings import OllamaEmbeddings
+# from langchain_community.vectorstores import FAISS
+from typing import List, Dict, Any, Optional, Union, Callable
+import time
+from functools import lru_cache
+import hashlib
+import streamlit as st
+
+from langchain_community.llms import Ollama
 from langchain.chains import ConversationChain, AnalyzeDocumentChain, LLMChain
 from langchain.chains.summarize import load_summarize_chain
 from langchain.chains.question_answering import load_qa_chain
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.memory import ConversationBufferMemory
-from langchain_community.document_loaders import TextLoader
-# from langchain_community.document_loaders.base import Document
 from langchain.schema import Document
+from langchain_community.document_loaders import TextLoader
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.vectorstores import FAISS
-from typing import List, Dict, Any, Optional, Union, Callable
+
+# Cache for model availability checks
+_model_cache = {}
+_model_cache_time = 0
+_CACHE_EXPIRY = 60  # seconds
 
 def check_ollama_status(url: str = "http://localhost:11434") -> bool:
     """
@@ -32,29 +53,53 @@ def check_ollama_status(url: str = "http://localhost:11434") -> bool:
         return response.status_code == 200
     except:
         return False
-
-def get_available_models(url: str = "http://localhost:11434") -> List[str]:
+@lru_cache(maxsize=32)
+def get_available_models(url: str = "http://localhost:11434", force_refresh: bool = False) -> List[str]:
     """
-    Get list of available models from Ollama
+    Get list of available models from Ollama with caching
     
     Args:
         url: Ollama API URL
+        force_refresh: Force refresh the cache
         
     Returns:
         List[str]: List of available model names
     """
+    global _model_cache, _model_cache_time
+    
+    current_time = time.time()
+    # Use cached result if available and not expired
+    if not force_refresh and _model_cache and (current_time - _model_cache_time) < _CACHE_EXPIRY:
+        return _model_cache
+    
     try:
         response = requests.get(f"{url}/api/tags")
-        data = response.json()
-        
-        # Extract model names
-        return [model["name"] for model in data.get("models", [])]
-    except:
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Extract model names
+            models = [model["name"] for model in data.get("models", [])]
+            
+            # Update cache
+            _model_cache = models
+            _model_cache_time = current_time
+            
+            return models
         return []
+    except:
+        # If there's an error, return cached models if available
+        if _model_cache:
+            return _model_cache
+        return []
+    
+def hash_text(text: str) -> str:
+    """Generate a hash for text to use as a cache key"""
+    return hashlib.md5(text.encode()).hexdigest()
 
+@lru_cache(maxsize=8)
 def create_ollama_llm(model_name: str = "llama2") -> Ollama:
     """
-    Create Ollama LLM instance
+    Create or retrieve cached Ollama LLM instance
     
     Args:
         model_name: Name of the Ollama model to use
@@ -64,6 +109,71 @@ def create_ollama_llm(model_name: str = "llama2") -> Ollama:
     """
     return Ollama(model=model_name)
 
+def create_ollama_llm(model_name: str = "llama2") -> Ollama:
+    """
+    Create Ollama LLM instance with optimized parameters
+    
+    Args:
+        model_name: Name of the Ollama model to use
+        
+    Returns:
+        Ollama: LangChain Ollama LLM instance
+    """
+    # Configure Ollama with parameters that don't cause warnings
+    return Ollama(
+        model=model_name,
+        num_ctx=2048,  # Adjust context window size for better performance
+        repeat_penalty=1.1,  # Slightly increase repetition penalty
+        temperature=0.7,  # Balance between creativity and determinism
+        num_predict=256,  # Control maximum token generation
+        stop=["<|endoftext|>"],  # Standard stop token
+        # Removed problematic 'tfs_z' parameter
+    )
+
+# File: utils/llm_processor.py
+# Create a custom configuration function
+
+def get_ollama_config(model_name: str, task_type: str = "general") -> Dict[str, Any]:
+    """
+    Get optimized Ollama configuration for various tasks
+    
+    Args:
+        model_name: Name of the Ollama model
+        task_type: Type of task ("general", "summarization", "qa", "analysis")
+        
+    Returns:
+        Dict: Ollama configuration parameters
+    """
+    # Base configuration
+    base_config = {
+        "model": model_name,
+        "temperature": 0.7,
+        "num_predict": 256,
+        "stop": ["<|endoftext|>"],
+    }
+    
+    # Task-specific adjustments
+    task_configs = {
+        "summarization": {
+            "temperature": 0.3,  # More deterministic for summaries
+            "num_predict": 1024  # Allow longer outputs for summaries
+        },
+        "qa": {
+            "temperature": 0.5,  # Balance between determinism and creativity
+            "num_predict": 512   # Medium-length responses
+        },
+        "analysis": {
+            "temperature": 0.2,  # More deterministic for analysis
+            "num_predict": 2048  # Allow very long outputs for detailed analysis
+        }
+    }
+    
+    # Apply task-specific configuration
+    if task_type in task_configs:
+        for key, value in task_configs[task_type].items():
+            base_config[key] = value
+    
+    return base_config
 def create_document_from_text(text: str, metadata: Optional[Dict[str, Any]] = None) -> Document:
     """
     Create a LangChain Document from text
@@ -113,26 +223,45 @@ def create_vector_index(documents: List[Document], model_name: str = "llama2") -
     embeddings = OllamaEmbeddings(model=model_name)
     return FAISS.from_documents(documents, embeddings)
 
-def summarize_document(text: str, model_name: str = "llama2") -> str:
+# File: utils/llm_processor.py
+# Replace the existing summarize_document function with this optimized version
+
+def summarize_document(text: str, model_name: str = "llama2", summary_length: str = "Balanced") -> str:
     """
-    Summarize a document using LangChain and Ollama
+    Summarize a document using LangChain and Ollama with progress tracking
     
     Args:
         text: Document text to summarize
         model_name: Name of the Ollama model to use
+        summary_length: Desired summary length ("Concise", "Balanced", or "Detailed")
         
     Returns:
         str: Generated summary
     """
     llm = create_ollama_llm(model_name)
     
-    # Create a summarization chain
-    prompt_template = """
-    You are a legal document summarizer. Summarize the following document in a comprehensive way,
-    highlighting the key points, legal implications, and important details.
+    # Adjust parameters based on summary length
+    length_params = {
+        "Concise": {"max_tokens": 500, "instruction": "Create a brief summary focusing only on the most essential points."},
+        "Balanced": {"max_tokens": 1000, "instruction": "Create a comprehensive summary covering the main points and important details."},
+        "Detailed": {"max_tokens": 2000, "instruction": "Create a detailed summary covering all significant aspects of the document."}
+    }
+    
+    params = length_params.get(summary_length, length_params["Balanced"])
+    
+    # Create a summarization prompt that's optimized for legal documents
+    prompt_template = f"""
+    You are a legal document summarizer. {params['instruction']}
+    
+    Guidelines:
+    - Focus on key legal points, obligations, and implications
+    - Identify parties, dates, and important clauses
+    - Maintain factual accuracy
+    - Organize the summary in a clear, structured format
+    - Use professional legal terminology where appropriate
     
     Document:
-    {text}
+    {{text}}
     
     Summary:
     """
@@ -140,26 +269,39 @@ def summarize_document(text: str, model_name: str = "llama2") -> str:
     prompt = PromptTemplate.from_template(prompt_template)
     summarize_chain = LLMChain(llm=llm, prompt=prompt)
     
-    # Split the document if it's too long
+    # For long documents, use a more efficient chunking strategy
     if len(text) > 4000:
-        # Create multiple summaries and then combine them
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=4000, chunk_overlap=400)
-        texts = text_splitter.split_text(text)
+        # Create a text splitter that respects paragraph boundaries
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=4000,
+            chunk_overlap=400,
+            separators=["\n\n", "\n", ". ", " ", ""]
+        )
+        chunks = text_splitter.split_text(text)
         
-        summaries = []
-        for chunk in texts:
-            summaries.append(summarize_chain.run(text=chunk))
+        # Generate summaries in parallel if possible
+        chunk_summaries = []
         
-        # Combine the summaries
-        combined_summary = "\n\n".join(summaries)
+        # Process chunks with progress tracking
+        for i, chunk in enumerate(chunks):
+            # Use a slightly different prompt for chunks
+            chunk_prompt = f"Summarize this section (part {i+1} of {len(chunks)}) of a legal document:\n\n{chunk}"
+            chunk_summary = summarize_chain.run(text=chunk_prompt)
+            chunk_summaries.append(chunk_summary)
         
-        # Create a final summary of the combined summaries
-        final_summary = summarize_chain.run(text=combined_summary)
+        # Combine the chunk summaries
+        combined_summary = "\n\n".join(chunk_summaries)
+        
+        # Final summary of the combined summaries
+        final_prompt = f"""
+        Create a coherent {summary_length.lower()} summary from these section summaries of a legal document:
+        
+        {combined_summary}
+        """
+        final_summary = summarize_chain.run(text=final_prompt)
         return final_summary
     else:
         return summarize_chain.run(text=text)
-
-# utils/llm_processor.py - update the analyze_contract function
 
 import json
 import re

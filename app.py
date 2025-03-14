@@ -2,14 +2,24 @@ import streamlit as st
 from components.document_summary import document_summarization_ui
 from components.contract_analysis import contract_analysis_ui
 from components.voice_qa import voice_qa_ui
+import streamlit as st
 
-# Page configuration
+# Configure page for caching
 st.set_page_config(
     page_title="Legal Assistant",
     page_icon="⚖️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': 'https://github.com/yourusername/legal-assistant',
+        'Report a bug': 'https://github.com/yourusername/legal-assistant/issues',
+        'About': "Legal Assistant - An AI-powered tool for legal professionals"
+    }
 )
+
+# Initialize session state for caching
+if 'cache' not in st.session_state:
+    st.session_state.cache = {}
 
 # Add custom CSS
 def load_css():

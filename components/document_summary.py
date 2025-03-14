@@ -10,15 +10,23 @@ from utils.document_processor import extract_text_from_file
 from utils.llm_processor import summarize_document, check_ollama_status, get_available_models
 from functools import partial
 
+from utils.background_processor import task_manager, summarize_document_with_progress
+import time
+import uuid
+
 def document_summarization_ui():
     """
-    Streamlit UI for document summarization component.
+    Streamlit UI for document summarization component with background processing.
     """
     st.header("📄 Document Summarization")
     st.markdown("""
         Upload a legal document (PDF, DOCX, or TXT) to generate an AI-powered summary.
         The summary will highlight key points, legal implications, and important details.
     """)
+    
+    # Initialize session state
+    if 'summary_task_id' not in st.session_state:
+        st.session_state.summary_task_id = None
     
     # Check if Ollama is running
     if not check_ollama_status():
@@ -36,12 +44,18 @@ def document_summarization_ui():
         models = ["llama2"]  # Default fallback
     
     # Model selection
-    model_name = st.selectbox(
-        "Select AI Model",
-        options=models,
-        index=0,
-        help="Choose the Ollama model to use for summarization"
-    )
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        model_name = st.selectbox(
+            "Select AI Model",
+            options=models,
+            index=0,
+            help="Choose the Ollama model to use for summarization"
+        )
+    
+    with col2:
+        cache_option = st.checkbox("Use cache (faster)", value=True, 
+                                  help="Cache results for faster processing of previously seen documents")
     
     # File upload
     uploaded_file = st.file_uploader(
@@ -92,22 +106,61 @@ def document_summarization_ui():
             help="Choose how detailed the summary should be"
         )
         
-        # Map summary length to model parameters (could be used for prompt engineering)
-        summary_params = {
-            "Concise": {"max_length": 1000},
-            "Balanced": {"max_length": 2000},
-            "Detailed": {"max_length": 3000}
-        }
+        # Check if a task is already running
+        if st.session_state.summary_task_id:
+            task_status = task_manager.get_task_status(st.session_state.summary_task_id)
+            
+            if task_status['status'] == 'running':
+                # Show progress bar for running task
+                st.info(f"Generating summary... {task_status['message']}")
+                st.progress(task_status['progress'])
+                
+                # Add a button to check status
+                if st.button("Check Progress"):
+                    st.rerun()
+            
+            elif task_status['status'] == 'completed':
+                # Show completed summary
+                st.success("Summary generation completed!")
+                summary = task_status['result']
+                
+                st.write("### Document Summary")
+                st.markdown(summary)
+                
+                # Option to download summary
+                summary_bytes = summary.encode()
+                st.download_button(
+                    label="Download Summary",
+                    data=summary_bytes,
+                    file_name=f"{os.path.splitext(uploaded_file.name)[0]}_summary.txt",
+                    mime="text/plain"
+                )
+                
+                # Button to start a new summary
+                if st.button("Generate New Summary"):
+                    st.session_state.summary_task_id = None
+                    st.rerun()
+            
+            elif task_status['status'] == 'error':
+                # Show error message
+                st.error(f"Error generating summary: {task_status['error']}")
+                
+                # Button to try again
+                if st.button("Try Again"):
+                    st.session_state.summary_task_id = None
+                    st.rerun()
         
-        # Generate summary
-        if st.button("Generate Summary", key="generate_summary"):
-            with st.spinner("Generating summary... This may take a while depending on document length and model..."):
-                try:
-                    # Adjust prompt based on summary length (this would be implemented in llm_processor.py)
-                    summary = summarize_document(text, model_name=model_name)
+        else:
+            # Generate summary button
+            if st.button("Generate Summary", key="generate_summary"):
+                # Cache key for document summarization
+                cache_key = f"summary_{hash_text(text)}_{model_name}_{summary_length}"
+                
+                if cache_option and cache_key in st.session_state:
+                    # Use cached result
+                    summary = st.session_state[cache_key]
                     
-                    # Display summary
-                    st.write("### Document Summary")
+                    st.write("### Document Summary (Cached)")
                     st.markdown(summary)
                     
                     # Option to download summary
@@ -118,8 +171,28 @@ def document_summarization_ui():
                         file_name=f"{os.path.splitext(uploaded_file.name)[0]}_summary.txt",
                         mime="text/plain"
                     )
-                except Exception as e:
-                    st.error(f"Error generating summary: {str(e)}")
+                else:
+                    # Start background task
+                    task_id = f"summary_{uuid.uuid4().hex}"
+                    st.session_state.summary_task_id = task_id
+                    
+                    task_manager.start_task(
+                        task_id=task_id,
+                        func=summarize_document_with_progress,
+                        kwargs={
+                            'text': text,
+                            'model_name': model_name,
+                            'summary_length': summary_length
+                        }
+                    )
+                    
+                    # Show initial progress
+                    st.info("Started summary generation in the background...")
+                    st.progress(0)
+                    
+                    # Rerun to update UI
+                    time.sleep(0.5)
+                    st.rerun()
     
     # Tips section
     with st.expander("Tips for Better Summaries"):
@@ -128,6 +201,8 @@ def document_summarization_ui():
             - **Document Length**: The summarizer works best with documents under 50 pages
             - **Legal Terminology**: Documents with standard legal terminology work best
             - **Try Different Models**: Different Ollama models may give different results
+            - **Summary Length**: "Concise" is fastest, "Detailed" is most comprehensive
+            - **Use Cache**: Enable caching for faster results with previously seen documents
         """)
     
     # Sample document option
