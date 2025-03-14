@@ -172,24 +172,26 @@ def analyze_contract(text: str, model_name: str = "llama2") -> Dict[str, Any]:
     """
     llm = create_ollama_llm(model_name)
     
-    # Create a contract analysis chain
+    # Create a contract analysis chain with strict JSON output instructions
     prompt_template = """
     You are a legal contract analyst. Analyze the following contract and extract key information.
     
     Contract:
     {text}
     
-    Please provide a structured analysis with the following information:
-    1. Parties involved
-    2. Contract type
-    3. Key dates (effective date, termination date, etc.)
-    4. Key terms and conditions
-    5. Obligations of each party
-    6. Termination conditions
-    7. Potential legal issues or risks
-    8. Recommendations
+    Provide ONLY a JSON object with the following structure, and nothing else before or after it:
+    {{
+        "parties": ["Party 1", "Party 2", ...],
+        "contract_type": "Type of contract",
+        "key_dates": ["Date 1: description", "Date 2: description", ...],
+        "key_terms": ["Term 1", "Term 2", ...],
+        "obligations": ["Obligation 1", "Obligation 2", ...],
+        "termination_conditions": ["Condition 1", "Condition 2", ...],
+        "risks": ["Risk 1", "Risk 2", ...],
+        "recommendations": ["Recommendation 1", "Recommendation 2", ...]
+    }}
     
-    Format your response as a structured JSON object.
+    Remember: Your entire response must only be the JSON object with no additional text before or after.
     """
     
     prompt = PromptTemplate.from_template(prompt_template)
@@ -198,9 +200,20 @@ def analyze_contract(text: str, model_name: str = "llama2") -> Dict[str, Any]:
     # Run the analysis
     result = analysis_chain.run(text=text)
     
-    # Note: In a real implementation, we would parse the JSON result
-    # Here we're just returning the text as the LLM might not always 
-    # provide valid JSON format
+    # Try to parse JSON from the result - with more robust parsing
+    try:
+        # Find JSON content in the response (if there's any text before/after JSON)
+        json_start = result.find('{')
+        json_end = result.rfind('}') + 1
+        
+        if json_start >= 0 and json_end > json_start:
+            json_text = result[json_start:json_end]
+            structured_data = json.loads(json_text)
+            return {"analysis": json_text, "structured_data": structured_data}
+    except Exception as e:
+        print(f"JSON parsing error: {e}")
+    
+    # If we couldn't parse JSON, return just the text
     return {"analysis": result}
 
 def answer_question(question: str, context: str, model_name: str = "llama2") -> str:

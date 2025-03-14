@@ -107,65 +107,76 @@ def contract_analysis_ui():
                     
                     # Display analysis
                     st.write("### Contract Analysis Results")
-                    st.markdown(analysis_text)
                     
-                    # Try to parse structured data (if the model returned valid JSON)
-                    try:
-                        # First, try to find JSON in the response
-                        json_start = analysis_text.find('{')
-                        json_end = analysis_text.rfind('}') + 1
+                    # Check if we have structured data
+                    if "structured_data" in analysis_result:
+                        data = analysis_result["structured_data"]
                         
-                        if json_start >= 0 and json_end > json_start:
-                            json_text = analysis_text[json_start:json_end]
-                            structured_data = json.loads(json_text)
+                        # Create tabs for different sections
+                        tabs = st.tabs(["Overview", "Parties & Terms", "Obligations", "Risks & Recommendations"])
+                        
+                        with tabs[0]:
+                            st.write("### Contract Overview")
+                            if "contract_type" in data:
+                                st.write(f"**Contract Type:** {data['contract_type']}")
                             
-                            # Display structured data in tabs
-                            if structured_data:
-                                tabs = st.tabs(["Overview", "Parties", "Terms", "Obligations", "Risks"])
-                                
-                                with tabs[0]:
-                                    st.write("### Contract Overview")
-                                    if "contract_type" in structured_data:
-                                        st.write(f"**Contract Type:** {structured_data['contract_type']}")
-                                    if "key_dates" in structured_data:
-                                        st.write("**Key Dates:**")
-                                        for date_item in structured_data["key_dates"]:
-                                            st.write(f"- {date_item}")
-                                
-                                with tabs[1]:
-                                    st.write("### Parties Involved")
-                                    if "parties" in structured_data:
-                                        for party in structured_data["parties"]:
-                                            st.write(f"- {party}")
-                                
-                                with tabs[2]:
-                                    st.write("### Key Terms and Conditions")
-                                    if "key_terms" in structured_data:
-                                        for term in structured_data["key_terms"]:
-                                            st.write(f"- {term}")
-                                
-                                with tabs[3]:
-                                    st.write("### Obligations")
-                                    if "obligations" in structured_data:
-                                        for obligation in structured_data["obligations"]:
-                                            st.write(f"- {obligation}")
-                                
-                                with tabs[4]:
-                                    st.write("### Potential Risks")
-                                    if "risks" in structured_data:
-                                        for risk in structured_data["risks"]:
-                                            st.write(f"- {risk}")
-                    except:
-                        # If JSON parsing fails, just display the full text
-                        pass
+                            # Display key dates if available
+                            if "key_dates" in data and data["key_dates"]:
+                                st.write("**Key Dates:**")
+                                for date in data["key_dates"]:
+                                    st.write(f"- {date}")
+                            else:
+                                st.write("**Key Dates:** None specified")
+                        
+                        with tabs[1]:
+                            # Display parties
+                            if "parties" in data and data["parties"]:
+                                st.write("### Parties Involved")
+                                for party in data["parties"]:
+                                    st.write(f"- {party}")
+                            
+                            # Display key terms
+                            if "key_terms" in data and data["key_terms"]:
+                                st.write("### Key Terms and Conditions")
+                                for term in data["key_terms"]:
+                                    st.write(f"- {term}")
+                            
+                            # Display termination conditions
+                            if "termination_conditions" in data and data["termination_conditions"]:
+                                st.write("### Termination Conditions")
+                                for condition in data["termination_conditions"]:
+                                    st.write(f"- {condition}")
+                        
+                        with tabs[2]:
+                            # Display obligations
+                            if "obligations" in data and data["obligations"]:
+                                st.write("### Obligations")
+                                for obligation in data["obligations"]:
+                                    st.write(f"- {obligation}")
+                        
+                        with tabs[3]:
+                            # Display risks
+                            if "risks" in data and data["risks"]:
+                                st.write("### Potential Risks")
+                                for risk in data["risks"]:
+                                    st.write(f"- {risk}")
+                            
+                            # Display recommendations
+                            if "recommendations" in data and data["recommendations"]:
+                                st.write("### Recommendations")
+                                for rec in data["recommendations"]:
+                                    st.write(f"- {rec}")
+                    else:
+                        # If no structured data, display raw text
+                        st.markdown(analysis_text)
                     
                     # Option to download analysis
-                    analysis_bytes = analysis_text.encode()
+                    analysis_bytes = json.dumps(analysis_result.get("structured_data", {}), indent=2).encode() if "structured_data" in analysis_result else analysis_text.encode()
                     st.download_button(
                         label="Download Analysis",
                         data=analysis_bytes,
-                        file_name=f"{os.path.splitext(uploaded_file.name)[0]}_analysis.txt",
-                        mime="text/plain",
+                        file_name=f"{os.path.splitext(uploaded_file.name)[0]}_analysis.json" if "structured_data" in analysis_result else f"{os.path.splitext(uploaded_file.name)[0]}_analysis.txt",
+                        mime="application/json" if "structured_data" in analysis_result else "text/plain",
                         key="download_analysis"
                     )
                 except Exception as e:
