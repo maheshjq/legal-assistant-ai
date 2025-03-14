@@ -20,6 +20,9 @@ import time
 from functools import lru_cache
 import hashlib
 import streamlit as st
+import json
+import re
+
 
 from langchain_community.llms import Ollama
 from langchain.chains import ConversationChain, AnalyzeDocumentChain, LLMChain
@@ -228,7 +231,7 @@ def create_vector_index(documents: List[Document], model_name: str = "llama2") -
 
 def summarize_document(text: str, model_name: str = "llama2", summary_length: str = "Balanced") -> str:
     """
-    Summarize a document using LangChain and Ollama with progress tracking
+    Summarize a document using Ollama directly for better reliability
     
     Args:
         text: Document text to summarize
@@ -238,73 +241,111 @@ def summarize_document(text: str, model_name: str = "llama2", summary_length: st
     Returns:
         str: Generated summary
     """
-    llm = create_ollama_llm(model_name)
+    # Define parameters based on summary length
+    if summary_length == "Concise":
+        temperature = 0.3
+        instruction = "Create a brief summary focusing only on the most essential points."
+        max_tokens = 500
+    elif summary_length == "Detailed":
+        temperature = 0.5
+        instruction = "Create a detailed summary covering all significant aspects of the document."
+        max_tokens = 1500
+    else:  # Balanced
+        temperature = 0.4
+        instruction = "Create a comprehensive summary covering the main points and important details."
+        max_tokens = 1000
     
-    # Adjust parameters based on summary length
-    length_params = {
-        "Concise": {"max_tokens": 500, "instruction": "Create a brief summary focusing only on the most essential points."},
-        "Balanced": {"max_tokens": 1000, "instruction": "Create a comprehensive summary covering the main points and important details."},
-        "Detailed": {"max_tokens": 2000, "instruction": "Create a detailed summary covering all significant aspects of the document."}
-    }
-    
-    params = length_params.get(summary_length, length_params["Balanced"])
-    
-    # Create a summarization prompt that's optimized for legal documents
-    prompt_template = f"""
-    You are a legal document summarizer. {params['instruction']}
-    
-    Guidelines:
-    - Focus on key legal points, obligations, and implications
-    - Identify parties, dates, and important clauses
-    - Maintain factual accuracy
-    - Organize the summary in a clear, structured format
-    - Use professional legal terminology where appropriate
-    
-    Document:
-    {{text}}
-    
-    Summary:
-    """
-    
-    prompt = PromptTemplate.from_template(prompt_template)
-    summarize_chain = LLMChain(llm=llm, prompt=prompt)
-    
-    # For long documents, use a more efficient chunking strategy
-    if len(text) > 4000:
-        # Create a text splitter that respects paragraph boundaries
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=4000,
-            chunk_overlap=400,
-            separators=["\n\n", "\n", ". ", " ", ""]
-        )
-        chunks = text_splitter.split_text(text)
+    # For very long documents, use a sampling strategy
+    if len(text) > 6000:
+        # Split text into sections
+        sections = text.split("\n\n")
         
-        # Generate summaries in parallel if possible
-        chunk_summaries = []
+        # Take samples from beginning, middle, and end
+        samples = []
         
-        # Process chunks with progress tracking
-        for i, chunk in enumerate(chunks):
-            # Use a slightly different prompt for chunks
-            chunk_prompt = f"Summarize this section (part {i+1} of {len(chunks)}) of a legal document:\n\n{chunk}"
-            chunk_summary = summarize_chain.run(text=chunk_prompt)
-            chunk_summaries.append(chunk_summary)
+        # Beginning (first 3 sections or fewer if not enough)
+        beginning = sections[:min(3, len(sections))]
+        samples.extend(beginning)
         
-        # Combine the chunk summaries
-        combined_summary = "\n\n".join(chunk_summaries)
+        # Middle (3 sections from the middle)
+        if len(sections) > 6:
+            middle_idx = len(sections) // 2
+            middle = sections[middle_idx-1:middle_idx+2]
+            samples.extend(middle)
         
-        # Final summary of the combined summaries
-        final_prompt = f"""
-        Create a coherent {summary_length.lower()} summary from these section summaries of a legal document:
+        # End (last 3 sections)
+        if len(sections) > 3:
+            end = sections[-3:]
+            samples.extend(end)
         
-        {combined_summary}
+        # Join samples with markers
+        sampled_text = "\n\n[...]\n\n".join(samples)
+        
+        # Prepare prompt with explanation about sampling
+        prompt = f"""
+        You are a legal document summarizer. {instruction}
+        
+        The document is very long, so I'm providing key sections from the beginning, middle, and end.
+        
+        Guidelines:
+        - Focus on key legal points, obligations, and implications
+        - Identify parties, dates, and important clauses if mentioned
+        - Maintain factual accuracy
+        - Organize the summary in a clear, structured format
+        - Use professional legal terminology where appropriate
+        
+        Document sections:
+        {sampled_text}
+        
+        Summary:
         """
-        final_summary = summarize_chain.run(text=final_prompt)
-        return final_summary
     else:
-        return summarize_chain.run(text=text)
+        # Use the full text for shorter documents
+        prompt = f"""
+        You are a legal document summarizer. {instruction}
+        
+        Guidelines:
+        - Focus on key legal points, obligations, and implications
+        - Identify parties, dates, and important clauses
+        - Maintain factual accuracy
+        - Organize the summary in a clear, structured format
+        - Use professional legal terminology where appropriate
+        
+        Document:
+        {text}
+        
+        Summary:
+        """
+    
+    # Try to use direct Ollama API for better reliability
+    try:
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={
+                "model": model_name,
+                "prompt": prompt,
+                "temperature": temperature,
+                "num_predict": max_tokens,
+                "stop": ["<|endoftext|>", "Summary:"]
+            }
+        )
+        
+        if response.status_code == 200:
+            result = response.json().get("response", "")
+            return result.strip()
+        else:
+            # Fallback to LangChain if direct API fails
+            llm = Ollama(model=model_name, temperature=temperature)
+            return llm.invoke(prompt).strip()
+            
+    except Exception as e:
+        # Try LangChain as fallback
+        try:
+            llm = Ollama(model=model_name, temperature=temperature)
+            return llm.invoke(prompt).strip()
+        except Exception as e2:
+            raise Exception(f"Failed to generate summary: {str(e)}. Fallback also failed: {str(e2)}")
 
-import json
-import re
 
 def analyze_contract(text: str, model_name: str = "llama2", **kwargs) -> Dict[str, Any]:
     """
