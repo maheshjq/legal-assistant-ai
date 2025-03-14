@@ -4,6 +4,8 @@ Audio processing utilities for recording and transcribing speech.
 
 import tempfile
 import os
+import subprocess
+import sys
 import time
 import sounddevice as sd
 import numpy as np
@@ -148,3 +150,49 @@ def record_and_get_text(duration: int = 10, language: str = "en") -> str:
     """
     result = record_and_transcribe(duration=duration, language=language)
     return get_text_from_transcription(result)
+
+
+def check_ffmpeg_installed() -> bool:
+    """
+    Check if ffmpeg is installed on the system
+    
+    Returns:
+        bool: True if ffmpeg is installed, False otherwise
+    """
+    try:
+        subprocess.run(
+            ["ffmpeg", "-version"], 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE,
+            check=False
+        )
+        return True
+    except FileNotFoundError:
+        return False
+
+# Add this check to the record_and_transcribe function
+def record_and_transcribe(duration: int = 10, language: str = "en") -> Dict[str, Any]:
+    """
+    Record audio from microphone and transcribe it
+    
+    Args:
+        duration: Recording duration in seconds
+        language: Language code (e.g., "en" for English)
+        
+    Returns:
+        Dict: Containing the transcription results or error message
+    """
+    # Check for ffmpeg
+    if not check_ffmpeg_installed():
+        return {
+            "error": True,
+            "text": "ffmpeg is not installed. Please install ffmpeg and try again.",
+            "install_instructions": {
+                "macos": "brew install ffmpeg",
+                "ubuntu_debian": "sudo apt update && sudo apt install ffmpeg",
+                "windows": "choco install ffmpeg or download from https://ffmpeg.org/download.html"
+            }
+        }
+    
+    audio_data, sample_rate = record_audio(duration=duration)
+    return transcribe_audio_data(audio_data, sample_rate, language=language)

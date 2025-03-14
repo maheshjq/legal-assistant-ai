@@ -11,7 +11,8 @@ from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.memory import ConversationBufferMemory
 from langchain_community.document_loaders import TextLoader
-from langchain_community.document_loaders.base import Document
+# from langchain_community.document_loaders.base import Document
+from langchain.schema import Document
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.vectorstores import FAISS
 from typing import List, Dict, Any, Optional, Union, Callable

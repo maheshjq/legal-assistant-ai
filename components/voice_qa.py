@@ -10,6 +10,8 @@ from io import BytesIO
 from utils.document_processor import extract_text_from_file
 from utils.audio_processor import record_and_transcribe, record_audio, save_audio_to_temp_file, transcribe_audio_file
 from utils.llm_processor import answer_question, check_ollama_status, get_available_models
+# components/voice_qa.py - Add at the top
+from utils.audio_processor import record_and_transcribe, record_audio, save_audio_to_temp_file, transcribe_audio_file, check_ffmpeg_installed
 import numpy as np
 
 def voice_qa_ui():
@@ -63,7 +65,7 @@ def voice_qa_ui():
     )
     
     if uploaded_file is not None:
-        # Display file info
+        # Display file info and process document
         file_details = {
             "Filename": uploaded_file.name,
             "File size": f"{uploaded_file.size / 1024:.2f} KB",
@@ -191,37 +193,52 @@ def voice_qa_ui():
         # Voice recording
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🎤 Record Voice Question", key="record_voice"):
+            if st.button("🎤 Record Voice Question", key="voice_record_btn"):
+                # Voice recording handling
                 with st.spinner("Recording... Speak now"):
-                    # Record audio
                     try:
-                        audio_data, sample_rate = record_audio(duration=5)  # 5 seconds recording
-                        st.session_state.audio_data = audio_data
-                        st.session_state.sample_rate = sample_rate
-                        
-                        # Save audio to temp file
-                        temp_file = save_audio_to_temp_file(audio_data, sample_rate)
-                        
-                        # Transcribe audio
-                        with st.spinner("Transcribing..."):
-                            result = transcribe_audio_file(temp_file)
-                            transcribed_text = result.get("text", "")
+                        # Check for ffmpeg
+                        if not check_ffmpeg_installed():
+                            st.error("""
+                                ffmpeg is not installed, which is required for audio processing.
+                                
+                                Please install ffmpeg:
+                                - macOS: `brew install ffmpeg`
+                                - Ubuntu/Debian: `sudo apt update && sudo apt install ffmpeg`
+                                - Windows: Install using Chocolatey `choco install ffmpeg` or download from https://ffmpeg.org/download.html
+                                
+                                After installing, restart the application.
+                            """)
+                            st.session_state.transcribed_text = "Error: ffmpeg not installed. Please install ffmpeg and try again."
+                        else:
+                            # Record audio
+                            audio_data, sample_rate = record_audio(duration=5)
+                            st.session_state.audio_data = audio_data
+                            st.session_state.sample_rate = sample_rate
                             
-                            if transcribed_text:
-                                st.success("Transcription successful!")
-                                st.session_state.transcribed_text = transcribed_text
-                            else:
-                                st.error("Failed to transcribe audio. Please try again or type your question.")
-                        
-                        # Delete temp file
-                        try:
-                            os.remove(temp_file)
-                        except:
-                            pass
+                            # Save audio to temp file
+                            temp_file = save_audio_to_temp_file(audio_data, sample_rate)
+                            
+                            # Transcribe audio
+                            with st.spinner("Transcribing..."):
+                                result = transcribe_audio_file(temp_file)
+                                transcribed_text = result.get("text", "")
+                                
+                                if transcribed_text:
+                                    st.success("Transcription successful!")
+                                    st.session_state.transcribed_text = transcribed_text
+                                else:
+                                    st.error("Failed to transcribe audio. Please try again or type your question.")
+                            
+                            # Delete temp file
+                            try:
+                                os.remove(temp_file)
+                            except:
+                                pass
                     except Exception as e:
                         st.error(f"Error recording audio: {str(e)}")
         
-        # Display transcribed text if available
+        # Rest of the existing code for displaying transcribed text, etc.
         if "transcribed_text" in st.session_state:
             st.write("### Transcribed Question")
             st.write(st.session_state.transcribed_text)
@@ -238,7 +255,7 @@ def voice_qa_ui():
         )
         
         # Answer button
-        if st.button("Get Answer", key="get_answer"):
+        if st.button("Get Answer", key="get_answer_btn"):
             question = question_text or st.session_state.get("transcribed_text", "")
             
             if not question:
@@ -258,7 +275,7 @@ def voice_qa_ui():
                             del st.session_state.transcribed_text
                         
                         # Force a rerun to update UI
-                        st.experimental_rerun()
+                        st.rerun()
                     except Exception as e:
                         st.error(f"Error getting answer: {str(e)}")
         
@@ -279,3 +296,49 @@ def voice_qa_ui():
             - **Quiet Environment**: Record in a quiet environment for better audio quality
             - **Adjust Recording Time**: If your questions are being cut off, try typing them instead
         """)
+
+        # Find the record voice button handler (around line 111)
+        if st.button("🎤 Record Voice Question", key="record_voice"):
+            with st.spinner("Recording... Speak now"):
+                # Record audio
+                try:
+                    # First check if ffmpeg is installed
+                    if not check_ffmpeg_installed():  # Add this function import at the top
+                        st.error("""
+                            ffmpeg is not installed, which is required for audio processing.
+                            
+                            Please install ffmpeg:
+                            - macOS: `brew install ffmpeg`
+                            - Ubuntu/Debian: `sudo apt update && sudo apt install ffmpeg`
+                            - Windows: Install using Chocolatey `choco install ffmpeg` or download from https://ffmpeg.org/download.html
+                            
+                            After installing, restart the application.
+                        """)
+                        return
+                        
+                    # Rest of the existing code
+                    audio_data, sample_rate = record_audio(duration=5)  # 5 seconds recording
+                    st.session_state.audio_data = audio_data
+                    st.session_state.sample_rate = sample_rate
+                    
+                    # Save audio to temp file
+                    temp_file = save_audio_to_temp_file(audio_data, sample_rate)
+                    
+                    # Transcribe audio
+                    with st.spinner("Transcribing..."):
+                        result = transcribe_audio_file(temp_file)
+                        transcribed_text = result.get("text", "")
+                        
+                        if transcribed_text:
+                            st.success("Transcription successful!")
+                            st.session_state.transcribed_text = transcribed_text
+                        else:
+                            st.error("Failed to transcribe audio. Please try again or type your question.")
+                    
+                    # Delete temp file
+                    try:
+                        os.remove(temp_file)
+                    except:
+                        pass
+                except Exception as e:
+                    st.error(f"Error recording audio: {str(e)}")
